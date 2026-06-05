@@ -33,14 +33,26 @@ def get_embedder() -> SentenceTransformer:
         config_kwargs={"use_memory_efficient_attention": False, "unpad_inputs": False},
     )
     model.max_seq_length = 512
-    # PyTorch 2.12 bug: persistent=False position_ids buffer is not properly
-    # initialized after weight loading, causing CUDA index-out-of-bounds errors.
+    # PyTorch 2.12 bug: persistent=False buffers are not properly initialized
+    # after weight loading (position_ids, inv_freq, cos_cached, sin_cached).
     for mod in model.modules():
         if hasattr(mod, "position_ids") and isinstance(mod.position_ids, torch.Tensor):
             mod.register_buffer(
                 "position_ids",
                 torch.arange(mod.position_ids.shape[0]),
                 persistent=False,
+            )
+        if (
+            hasattr(mod, "_set_cos_sin_cache")
+            and hasattr(mod, "cos_cached")
+            and mod.cos_cached is not None
+            and mod.cos_cached.isnan().any()
+        ):
+            seq_len = mod.cos_cached.shape[0]
+            mod._set_cos_sin_cache(
+                seq_len=seq_len,
+                device=mod.cos_cached.device,
+                dtype=torch.get_default_dtype(),
             )
     model.eval()
     return model

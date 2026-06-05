@@ -2,10 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 LABEL_SAFE = 0
-LABEL_HARMFUL = 1
-LABEL_JAILBREAK = 2
-ID2LABEL = {0: "safe", 1: "harmful", 2: "jailbreak"}
-LABEL2ID = {"safe": 0, "harmful": 1, "jailbreak": 2}
+LABEL_JAILBREAK = 1
+LABEL_HARMFUL = 2
+ID2LABEL = {0: "safe", 1: "jailbreak", 2: "harmful"}
+LABEL2ID = {"safe": 0, "jailbreak": 1, "harmful": 2}
 NUM_LABELS = 3
 
 
