@@ -2,11 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 LABEL_SAFE = 0
-LABEL_HARMFUL = 1
-LABEL_JAILBREAK = 2
-ID2LABEL = {0: "safe", 1: "harmful", 2: "jailbreak"}
-LABEL2ID = {"safe": 0, "harmful": 1, "jailbreak": 2}
-NUM_LABELS = 3
+LABEL_BLOCK = 1
+ID2LABEL = {0: "safe", 1: "block"}
+LABEL2ID = {"safe": 0, "block": 1}
+NUM_LABELS = 2
 
 
 @dataclass
@@ -19,18 +18,10 @@ class DataConfig:
 
 
 @dataclass
-class EmbeddingConfig:
-    # Options: "Snowflake/snowflake-arctic-embed-m", "nvidia/NV-Embed-v2"
-    model_name: str = "Snowflake/snowflake-arctic-embed-m"
-    batch_size: int = 64
-    normalize_embeddings: bool = True
-
-
-@dataclass
 class BertConfig:
     model_name: str = "roberta-base"
     frozen: bool = False          # True = frozen encoder, head-only training
-    num_labels: int = 3
+    num_labels: int = 2
     head_hidden_size: int = 256   # set 0 for single linear layer (768→3)
     head_dropout: float = 0.1
     max_seq_len: int = 256

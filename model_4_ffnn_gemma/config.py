@@ -11,8 +11,8 @@ class Config:
     checkpoints_dir: Path = Path("checkpoints")
 
     # Embedding model
-    embed_model: str = "Snowflake/snowflake-arctic-embed-m-v2.0"
-    embed_dim: int = 768
+    embed_model: str = "google/embeddinggemma-300m"
+    embed_dim: int = 768          # embeddinggemma-300m native output dim
     embed_batch_size: int = 64
 
     # FFNN architecture
@@ -33,7 +33,7 @@ class Config:
     # Data
     test_size: float = 0.2
     random_seed: int = 42
-    max_text_length: int = 512  # chars, not tokens — for Arctic embedding
+    max_text_length: int = 512  # chars, not tokens
 
     # Hardware
     device: str = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"

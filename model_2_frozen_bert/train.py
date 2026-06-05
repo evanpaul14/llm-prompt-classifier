@@ -10,11 +10,19 @@ Examples:
 
 import argparse
 import logging
+import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+for _p in (_HERE, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from config import DataConfig, BertConfig
 from data.loader import load_all, split_dataset
@@ -73,7 +81,7 @@ def _make_bert_cfg(args) -> BertConfig:
 
 
 def _cv_bert(args, X_trainval, y_trainval) -> list[dict]:
-    from models.bert_classifier import train_bert, predict_bert
+    from model import train_bert, predict_bert
     from transformers import AutoTokenizer
 
     cfg = _make_bert_cfg(args)
@@ -98,7 +106,7 @@ def _cv_bert(args, X_trainval, y_trainval) -> list[dict]:
 
 
 def _train_final_bert(args, X_trainval, y_trainval, X_val, y_val, output_dir: Path):
-    from models.bert_classifier import train_bert, save_bert
+    from model import train_bert, save_bert
 
     cfg = _make_bert_cfg(args)
     model = train_bert(cfg, X_trainval, y_trainval, X_val, y_val)
@@ -115,10 +123,10 @@ def main() -> None:
 
     # ── load data ────────────────────────────────────────────────────────
     logger.info("Loading datasets …")
+    max_by_label = {0: args.max_safe} if args.max_safe is not None else None
     df = load_all(
-        max_samples_per_source=args.max_samples,
-        max_safe=args.max_safe,
-        cache_dir=args.cache_dir,
+        max_per_source=args.max_samples,
+        max_samples_by_label=max_by_label,
     )
     data_cfg = DataConfig(random_seed=args.seed)
     train_df, val_df, test_df = split_dataset(
@@ -147,7 +155,7 @@ def main() -> None:
     X_val = val_df["text"].tolist()
     y_val = val_df["label"].tolist()
 
-    from models.bert_classifier import predict_bert
+    from model import predict_bert
     from transformers import AutoTokenizer
 
     # ── 5-fold CV ────────────────────────────────────────────────────────

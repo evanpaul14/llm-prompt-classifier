@@ -14,9 +14,17 @@ Stages:
 
 import argparse
 import logging
+import os
+import sys
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+for _p in (_HERE, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from config import cfg
 from data.loader import load_all, SAFE

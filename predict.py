@@ -16,10 +16,10 @@ Usage:
     python predict.py --model 4 --input-file prompts.txt
 
 Models:
-    1  tfidf_lr       TF-IDF + Logistic Regression
-    2  frozen_bert    Frozen RoBERTa + classification head
-    3  roberta        Full fine-tuned RoBERTa
-    4  ffnn_arctic    FFNN on Snowflake Arctic Embed M v2.0 (5-fold ensemble)
+    1  tfidf_lr      TF-IDF + Logistic Regression
+    2  frozen_bert   Frozen RoBERTa + classification head
+    3  roberta       Full fine-tuned RoBERTa
+    4  ffnn_gemma    FFNN on EmbeddingGemma-300m (5-fold ensemble)
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 
-LABELS = ["safe", "jailbreak", "harmful"]
+LABELS = ["safe", "block"]
 
 MODEL_ALIASES = {
     "1": "tfidf_lr",
@@ -39,15 +39,15 @@ MODEL_ALIASES = {
     "frozen_bert": "frozen_bert",
     "3": "roberta",
     "roberta": "roberta",
-    "4": "ffnn_arctic",
-    "ffnn_arctic": "ffnn_arctic",
+    "4": "ffnn_gemma",
+    "ffnn_gemma": "ffnn_gemma",
 }
 
 MODEL_DISPLAY = {
     "tfidf_lr":    "1  TF-IDF + Logistic Regression",
     "frozen_bert": "2  Frozen RoBERTa + Classification Head",
     "roberta":     "3  Full Fine-tuned RoBERTa",
-    "ffnn_arctic": "4  FFNN on Snowflake Arctic Embed M v2.0 (5-fold ensemble)",
+    "ffnn_gemma":  "4  FFNN on EmbeddingGemma-300m (5-fold ensemble)",
 }
 
 
@@ -73,16 +73,16 @@ def _load_roberta():
     return load_roberta(str(path))  # returns (model, tokenizer)
 
 
-def _load_ffnn_arctic():
+def _load_ffnn_gemma():
     import torch
-    sys.path.insert(0, str(REPO_ROOT / "model_4_ffnn_arctic"))
+    sys.path.insert(0, str(REPO_ROOT / "model_4_ffnn_gemma"))
     from model import FFNNClassifier
     from config import cfg
     from embeddings.embed import get_embedder
 
-    cfg.checkpoints_dir = REPO_ROOT / "model_4_ffnn_arctic" / "checkpoints"
-    cfg.embeddings_dir = REPO_ROOT / "model_4_ffnn_arctic" / "cache" / "embeddings"
-    cfg.cache_dir = REPO_ROOT / "model_4_ffnn_arctic" / "cache"
+    cfg.checkpoints_dir = REPO_ROOT / "model_4_ffnn_gemma" / "checkpoints"
+    cfg.embeddings_dir = REPO_ROOT / "model_4_ffnn_gemma" / "cache" / "embeddings"
+    cfg.cache_dir = REPO_ROOT / "model_4_ffnn_gemma" / "cache"
     cfg.checkpoints_dir.mkdir(parents=True, exist_ok=True)
     cfg.embeddings_dir.mkdir(parents=True, exist_ok=True)
 
@@ -165,7 +165,7 @@ def predict_roberta(model_and_tok, texts: list[str]) -> list[dict]:
     return results
 
 
-def predict_ffnn_arctic(model_data, texts: list[str]) -> list[dict]:
+def predict_ffnn_gemma(model_data, texts: list[str]) -> list[dict]:
     import torch
     models, embedder, cfg = model_data
     emb = embedder.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
@@ -190,20 +190,20 @@ LOADERS = {
     "tfidf_lr":    _load_tfidf_lr,
     "frozen_bert": _load_frozen_bert,
     "roberta":     _load_roberta,
-    "ffnn_arctic": _load_ffnn_arctic,
+    "ffnn_gemma":  _load_ffnn_gemma,
 }
 
 PREDICTORS = {
     "tfidf_lr":    predict_tfidf_lr,
     "frozen_bert": predict_frozen_bert,
     "roberta":     predict_roberta,
-    "ffnn_arctic": predict_ffnn_arctic,
+    "ffnn_gemma":  predict_ffnn_gemma,
 }
 
 
 # ── display ────────────────────────────────────────────────────────────────────
 
-VERDICT = {"safe": "SAFE     ", "jailbreak": "JAILBREAK", "harmful": "HARMFUL  "}
+VERDICT = {"safe": "SAFE ", "block": "BLOCK"}
 
 
 def print_results(results: list[dict]) -> None:
@@ -228,14 +228,14 @@ def _select_model_interactive() -> str:
         choice = input("Select model (1-4 or name): ").strip().lower()
         if choice in MODEL_ALIASES:
             return MODEL_ALIASES[choice]
-        print("  Invalid choice. Enter 1, 2, 3, 4, tfidf_lr, frozen_bert, roberta, or ffnn_arctic.")
+        print("  Invalid choice. Enter 1, 2, 3, 4, tfidf_lr, frozen_bert, roberta, or ffnn_gemma.")
 
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Unified LLM prompt safety classifier.")
     p.add_argument(
         "--model", "-m", default=None,
-        help="Model to use: 1/tfidf_lr, 2/frozen_bert, 3/roberta, 4/ffnn_arctic"
+        help="Model to use: 1/tfidf_lr, 2/frozen_bert, 3/roberta, 4/ffnn_gemma"
     )
     p.add_argument("--prompt", "-p", default=None, help="Single prompt string.")
     p.add_argument("--input-file", "-f", default=None, help="File with one prompt per line.")
@@ -251,7 +251,7 @@ def main() -> None:
     else:
         key = args.model.strip().lower()
         if key not in MODEL_ALIASES:
-            print(f"Unknown model '{args.model}'. Choose from: 1, 2, 3, 4, tfidf_lr, frozen_bert, roberta, ffnn_arctic")
+            print(f"Unknown model '{args.model}'. Choose from: 1, 2, 3, 4, tfidf_lr, frozen_bert, roberta, ffnn_gemma")
             sys.exit(1)
         model_key = MODEL_ALIASES[key]
 

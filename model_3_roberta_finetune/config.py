@@ -2,11 +2,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 LABEL_SAFE = 0
-LABEL_JAILBREAK = 1
-LABEL_HARMFUL = 2
-ID2LABEL = {0: "safe", 1: "jailbreak", 2: "harmful"}
-LABEL2ID = {"safe": 0, "jailbreak": 1, "harmful": 2}
-NUM_LABELS = 3
+LABEL_BLOCK = 1
+ID2LABEL = {0: "safe", 1: "block"}
+LABEL2ID = {"safe": 0, "block": 1}
+NUM_LABELS = 2
 
 
 @dataclass
@@ -21,7 +20,7 @@ class DataConfig:
 @dataclass
 class RobertaConfig:
     model_name: str = "roberta-base"
-    num_labels: int = 3
+    num_labels: int = 2
     max_seq_len: int = 256
     batch_size: int = 16
     lr: float = 2e-5

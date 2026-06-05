@@ -10,11 +10,19 @@ Examples:
 
 import argparse
 import logging
+import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from transformers import AutoTokenizer
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+for _p in (_HERE, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from config import DataConfig, RobertaConfig
 from data.loader import load_all, split_dataset
@@ -24,7 +32,7 @@ from evaluate import (
     aggregate_cv_metrics,
     print_cv_metrics,
 )
-from models.roberta_finetune import train_roberta, predict_roberta, save_roberta
+from model import train_roberta, predict_roberta, save_roberta
 
 logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
@@ -102,9 +110,8 @@ def main() -> None:
     logger.info("Loading datasets …")
     by_label = {0: args.max_safe_samples} if args.max_safe_samples is not None else None
     df = load_all(
-        max_samples_per_source=args.max_samples,
+        max_per_source=args.max_samples,
         max_samples_by_label=by_label,
-        cache_dir=args.cache_dir,
     )
     data_cfg = DataConfig(random_seed=args.seed)
     train_df, val_df, test_df = split_dataset(

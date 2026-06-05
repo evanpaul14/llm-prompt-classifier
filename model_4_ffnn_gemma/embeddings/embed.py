@@ -1,9 +1,9 @@
 """
-Generate and cache embeddings using Snowflake Arctic Embed M v2.0.
+Generate and cache embeddings using google/embeddinggemma-300m.
 
-Arctic Embed M v2.0 uses query/document prompt prefixes for asymmetric tasks,
-but for classification we embed all texts the same way (no prefix).
-Embeddings are L2-normalized by the model.
+EmbeddingGemma does not support float16; we use bfloat16 on GPU/MPS and
+float32 on CPU. For classification we embed all texts the same way (no
+asymmetric query/document prompts). Embeddings are L2-normalised by the model.
 """
 
 import hashlib
@@ -20,40 +20,21 @@ logger = logging.getLogger(__name__)
 
 
 def _cache_path(texts: list[str]) -> Path:
+    model_slug = cfg.embed_model.replace("/", "_")
     digest = hashlib.md5("".join(texts[:100]).encode()).hexdigest()[:12]
-    return cfg.embeddings_dir / f"embeddings_{len(texts)}_{digest}.npz"
+    return cfg.embeddings_dir / f"embeddings_{model_slug}_{len(texts)}_{digest}.npz"
 
 
 def get_embedder() -> SentenceTransformer:
     logger.info(f"Loading {cfg.embed_model}")
-    # Disable memory-efficient attention (requires xformers, unavailable on MPS/CPU)
+    # float16 is unsupported by EmbeddingGemma; use bfloat16 on accelerators
+    dtype = torch.bfloat16 if cfg.device != "cpu" else torch.float32
     model = SentenceTransformer(
         cfg.embed_model,
         trust_remote_code=True,
-        config_kwargs={"use_memory_efficient_attention": False, "unpad_inputs": False},
+        model_kwargs={"torch_dtype": dtype},
     )
     model.max_seq_length = 512
-    # PyTorch 2.12 bug: persistent=False buffers are not properly initialized
-    # after weight loading (position_ids, inv_freq, cos_cached, sin_cached).
-    for mod in model.modules():
-        if hasattr(mod, "position_ids") and isinstance(mod.position_ids, torch.Tensor):
-            mod.register_buffer(
-                "position_ids",
-                torch.arange(mod.position_ids.shape[0]),
-                persistent=False,
-            )
-        if (
-            hasattr(mod, "_set_cos_sin_cache")
-            and hasattr(mod, "cos_cached")
-            and mod.cos_cached is not None
-            and mod.cos_cached.isnan().any()
-        ):
-            seq_len = mod.cos_cached.shape[0]
-            mod._set_cos_sin_cache(
-                seq_len=seq_len,
-                device=mod.cos_cached.device,
-                dtype=torch.get_default_dtype(),
-            )
     model.eval()
     return model
 
@@ -82,7 +63,7 @@ def embed_texts(
             batch_size=cfg.embed_batch_size,
             show_progress_bar=show_progress,
             convert_to_numpy=True,
-            normalize_embeddings=True,  # unit-sphere; good for cosine-based classifiers
+            normalize_embeddings=True,
             device=device,
         )
 

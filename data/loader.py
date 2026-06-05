@@ -13,13 +13,13 @@ from typing import Optional, Union
 
 import pandas as pd
 from datasets import load_dataset
+from sklearn.model_selection import train_test_split as _tts
 
 logger = logging.getLogger(__name__)
 
 SAFE        = 0
-JAILBREAK   = 1
-HARMFUL     = 2
-CLASS_NAMES = ["safe", "jailbreak", "harmful"]
+BLOCK       = 1   # covers both jailbreak and harmful
+CLASS_NAMES = ["safe", "block"]
 
 _TEXT_CANDIDATES = [
     "prompt", "text", "question", "behavior", "Behavior",
@@ -32,15 +32,15 @@ _SOURCES: list[dict] = [
     # system prompts (persona injections, token flooding, etc.) — not real
     # safe user queries, so it is excluded.
     dict(dataset_id="walledai/JailbreakHub", subset=None, split="train",
-         text_col="prompt", label=JAILBREAK, filter_col="jailbreak", filter_val=True,
+         text_col="prompt", label=BLOCK, filter_col="jailbreak", filter_val=True,
          source="JailbreakHub_jailbreak"),
 
     # ── jackhhao/jailbreak-classification ────────────────────────────────
     dict(dataset_id="jackhhao/jailbreak-classification", subset=None, split="train",
-         text_col="prompt", label=JAILBREAK, filter_col="type", filter_val="jailbreak",
+         text_col="prompt", label=BLOCK, filter_col="type", filter_val="jailbreak",
          source="jackhhao_jailbreak_train"),
     dict(dataset_id="jackhhao/jailbreak-classification", subset=None, split="test",
-         text_col="prompt", label=JAILBREAK, filter_col="type", filter_val="jailbreak",
+         text_col="prompt", label=BLOCK, filter_col="type", filter_val="jailbreak",
          source="jackhhao_jailbreak_test"),
     dict(dataset_id="jackhhao/jailbreak-classification", subset=None, split="train",
          text_col="prompt", label=SAFE, filter_col="type", filter_val="benign",
@@ -51,27 +51,27 @@ _SOURCES: list[dict] = [
 
     # ── JailbreakV-28K/JailBreakV-28k ────────────────────────────────────
     dict(dataset_id="JailbreakV-28K/JailBreakV-28k", subset="JailBreakV_28K",
-         split="JailBreakV_28K", text_col="jailbreak_query", label=JAILBREAK,
+         split="JailBreakV_28K", text_col="jailbreak_query", label=BLOCK,
          source="JailBreakV28K"),
     dict(dataset_id="JailbreakV-28K/JailBreakV-28k", subset="RedTeam_2K",
-         split="RedTeam_2K", text_col="question", label=JAILBREAK,
+         split="RedTeam_2K", text_col="question", label=BLOCK,
          source="RedTeam2K"),
 
     # ── OpenSafetyLab/Salad-Data ──────────────────────────────────────────
     dict(dataset_id="OpenSafetyLab/Salad-Data", subset="base_set", split="train",
-         text_col="question", label=HARMFUL, source="SaladData"),
+         text_col="question", label=BLOCK, source="SaladData"),
 
     # ── walledai/AdvBench ─────────────────────────────────────────────────
     dict(dataset_id="walledai/AdvBench", subset=None, split="train",
-         text_col="prompt", label=HARMFUL, source="AdvBench"),
+         text_col="prompt", label=BLOCK, source="AdvBench"),
 
     # ── walledai/HarmBench ────────────────────────────────────────────────
     dict(dataset_id="walledai/HarmBench", subset="standard", split="train",
-         text_col="prompt", label=HARMFUL, source="HarmBench_standard"),
+         text_col="prompt", label=BLOCK, source="HarmBench_standard"),
     dict(dataset_id="walledai/HarmBench", subset="contextual", split="train",
-         text_col="prompt", label=HARMFUL, source="HarmBench_contextual"),
+         text_col="prompt", label=BLOCK, source="HarmBench_contextual"),
     dict(dataset_id="walledai/HarmBench", subset="copyright", split="train",
-         text_col="prompt", label=HARMFUL, source="HarmBench_copyright"),
+         text_col="prompt", label=BLOCK, source="HarmBench_copyright"),
 
     # ── LLM-LAT/benign-dataset ────────────────────────────────────────────
     dict(dataset_id="LLM-LAT/benign-dataset", subset=None, split="train",
@@ -178,3 +178,27 @@ def load_all(
     for i, name in enumerate(CLASS_NAMES):
         logger.info("  %s: %d", name, (df["label"] == i).sum())
     return df
+
+
+def split_dataset(
+    df: pd.DataFrame,
+    test_size: float = 0.15,
+    val_size: float = 0.10,
+    random_seed: int = 42,
+) -> tuple:
+    """Split into (train, val, test) DataFrames, stratified by label.
+
+    val_size is the desired fraction of the *total* dataset (not of train+val).
+    """
+    trainval, test = _tts(
+        df, test_size=test_size, stratify=df["label"], random_state=random_seed
+    )
+    val_frac = val_size / (1.0 - test_size)
+    train, val = _tts(
+        trainval, test_size=val_frac, stratify=trainval["label"], random_state=random_seed
+    )
+    return (
+        train.reset_index(drop=True),
+        val.reset_index(drop=True),
+        test.reset_index(drop=True),
+    )

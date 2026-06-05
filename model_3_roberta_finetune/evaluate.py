@@ -8,8 +8,8 @@ from sklearn.metrics import (
     f1_score,
 )
 
-_LABELS = [0, 1, 2]
-_LABEL_NAMES = ["safe", "harmful", "jailbreak"]
+_LABELS = [0, 1]
+_LABEL_NAMES = ["safe", "block"]
 
 
 def compute_metrics(
