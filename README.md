@@ -1,12 +1,11 @@
 # LLM Prompt Safety Classifier
 
-Four models that classify user prompts into three safety categories:
+Binary text classifier that intercepts prompts before they reach an LLM and flags them as **safe** (pass through) or **block** (harmful or jailbreak attempt).
 
-| Label | Meaning |
-|-------|---------|
-| **safe** (0) | Benign instruction — pass through |
-| **jailbreak** (1) | Attempt to bypass model safety guidelines |
-| **harmful** (2) | Directly requests dangerous / policy-violating content |
+| Label | Value | Meaning |
+|-------|-------|---------|
+| **safe** | 0 | Benign instruction — pass through |
+| **block** | 1 | Harmful content or jailbreak attempt — intercept |
 
 ---
 
@@ -21,13 +20,13 @@ python predict.py
 
 # One-liner
 python predict.py --model 1 --prompt "How do I pick a lock?"
-python predict.py --model ffnn_arctic --prompt "Write a poem about autumn"
+python predict.py --model ffnn_gemma --prompt "Write a poem about autumn"
 
 # Batch from file (one prompt per line)
 python predict.py --model 3 --input-file prompts.txt
 ```
 
-Model options for `--model`: `1` / `tfidf_lr`, `2` / `frozen_bert`, `3` / `roberta`, `4` / `ffnn_arctic`
+Model options for `--model`: `1` / `tfidf_lr`, `2` / `frozen_bert`, `3` / `roberta`, `4` / `ffnn_gemma`
 
 ---
 
@@ -38,44 +37,40 @@ llm-prompt-classifier/
 ├── predict.py                        # unified inference script (all 4 models)
 ├── requirements.txt
 ├── data/
-│   └── loader.py                     # shared HuggingFace dataset loader
+│   └── loader.py                     # shared HuggingFace dataset loader + split_dataset()
 │
 ├── model_1_tfidf_lr/
 │   ├── model.py                      # TF-IDF + Logistic Regression pipeline
-│   ├── train.py                      # training script
-│   └── tfidf_lr.joblib               # ← saved model
+│   └── train.py                      # training script
 │
 ├── model_2_frozen_bert/
-│   ├── model.py                      # BertPromptClassifier (frozen encoder)
+│   ├── model.py                      # BertPromptClassifier (frozen RoBERTa encoder)
 │   ├── config.py                     # BertConfig dataclass
 │   ├── train.py                      # training script
-│   ├── evaluate.py                   # metric helpers
-│   └── frozen_bert.pt                # ← saved model
+│   └── evaluate.py                   # F1 / FPR / FNR metric helpers
 │
 ├── model_3_roberta_finetune/
 │   ├── model.py                      # full fine-tune via AutoModelForSequenceClassification
 │   ├── config.py                     # RobertaConfig dataclass
 │   ├── train.py                      # training script
-│   ├── evaluate.py                   # metric helpers
-│   └── roberta_finetuned/            # ← saved model (HuggingFace format)
-│       ├── config.json
-│       ├── model.safetensors
-│       ├── tokenizer.json
-│       └── tokenizer_config.json
+│   └── evaluate.py                   # F1 / FPR / FNR metric helpers
 │
-└── model_4_ffnn_arctic/
-    ├── model.py                      # FFNNClassifier (Linear→BN→GELU→Dropout stack)
-    ├── config.py                     # Config dataclass (all hyperparameters)
-    ├── train.py                      # 5-fold CV training script
-    ├── evaluate.py                   # ensemble evaluation
-    ├── embeddings/
-    │   └── embed.py                  # Arctic Embed M v2.0 with .npz disk cache
-    └── checkpoints/                  # ← saved models (one per CV fold)
-        ├── fold_1_best.pt
-        ├── fold_2_best.pt
-        ├── fold_3_best.pt
-        ├── fold_4_best.pt
-        └── fold_5_best.pt
+├── model_4_ffnn_gemma/
+│   ├── model.py                      # FFNNClassifier (Linear→BN→GELU→Dropout stack)
+│   ├── config.py                     # Config dataclass (all hyperparameters)
+│   ├── dataset.py                    # EmbeddingDataset (numpy → torch Dataset)
+│   ├── train.py                      # 5-fold CV training script
+│   ├── evaluate.py                   # ensemble evaluation with F1 / FPR / FNR
+│   ├── embeddings/
+│   │   └── embed.py                  # EmbeddingGemma-300m with .npz disk cache
+│   └── training/
+│       └── cross_val.py              # stratified 5-fold CV trainer
+│
+└── old_models/                       # archived checkpoints (3-class, now superseded)
+    ├── tfidf_lr.joblib
+    ├── frozen_bert.pt
+    ├── roberta_finetuned/
+    └── ffnn_arctic_checkpoints/
 ```
 
 ---
@@ -84,115 +79,134 @@ llm-prompt-classifier/
 
 ### Model 1 — TF-IDF + Logistic Regression (`model_1_tfidf_lr`)
 
-A classical sklearn pipeline: TF-IDF vectorizer (up to 50k unigram+bigram features,
-`sublinear_tf=True`) followed by an L-BFGS logistic regression with balanced class
-weights. Lightest model; no GPU required; loads and predicts in milliseconds.
-
-**Saved file:** `tfidf_lr.joblib` (sklearn Pipeline, loadable with `joblib.load`)
+Classical sklearn pipeline: TF-IDF vectorizer (50k unigram+bigram features,
+`sublinear_tf=True`) followed by L-BFGS logistic regression with balanced class
+weights. No GPU required; loads and predicts in milliseconds.
 
 **Training:**
 ```bash
-cd model_1_tfidf_lr
-python train.py --max-per-class 10000 --output tfidf_lr.joblib
+python model_1_tfidf_lr/train.py --max-per-class 10000 --output model_1_tfidf_lr/tfidf_lr.joblib
 ```
+
+Key flags: `--max-per-class`, `--max-safe`, `--max-block`, `--C`, `--skip-cv`
 
 ---
 
 ### Model 2 — Frozen RoBERTa + Classification Head (`model_2_frozen_bert`)
 
 `roberta-base` encoder with **all encoder layers frozen**. Only a two-layer
-classification head (`768 → 256 → ReLU → Dropout → 3`) is trained. Uses
-`[CLS]` token representation. Fast to train (head-only), good baseline for
-transformer-based classification.
-
-**Saved file:** `frozen_bert.pt` (PyTorch state dict + config via `torch.save`)
+classification head (`768 → 256 → ReLU → Dropout → 2`) is trained using the
+`[CLS]` token representation. Fast to train (head-only); good transformer baseline.
 
 **Training:**
 ```bash
-cd model_2_frozen_bert
-python train.py --lr 1e-3 --batch-size 32 --epochs 10
+python model_2_frozen_bert/train.py --lr 1e-3 --batch-size 32 --epochs 10
 ```
+
+Key flags: `--max-samples`, `--max-safe`, `--batch-size`, `--lr`, `--epochs`, `--patience`
 
 ---
 
 ### Model 3 — Full Fine-tuned RoBERTa (`model_3_roberta_finetune`)
 
-End-to-end fine-tuning of `roberta-base` using HuggingFace
-`AutoModelForSequenceClassification`. All encoder layers + the built-in
-classification head are updated with AdamW + linear LR warmup + early stopping.
-Most powerful of the four models; requires a GPU for reasonable training time.
-
-**Saved directory:** `roberta_finetuned/` (HuggingFace `save_pretrained` format —
-loadable with `AutoModelForSequenceClassification.from_pretrained`)
+End-to-end fine-tuning of `roberta-base` via HuggingFace
+`AutoModelForSequenceClassification`. All encoder layers + classification head
+trained with AdamW, linear LR warmup, and early stopping. Most accurate of the
+four models; requires a GPU for practical training time.
 
 **Training:**
 ```bash
-cd model_3_roberta_finetune
-python train.py --lr 2e-5 --batch-size 16 --epochs 10
+python model_3_roberta_finetune/train.py --lr 2e-5 --batch-size 16 --epochs 10
 ```
+
+Key flags: `--max-samples`, `--max-safe-samples`, `--batch-size`, `--lr`, `--epochs`, `--patience`
 
 ---
 
-### Model 4 — FFNN on Snowflake Arctic Embeddings (`model_4_ffnn_arctic`)
+### Model 4 — FFNN on EmbeddingGemma-300m (`model_4_ffnn_gemma`)
 
-A two-stage pipeline:
+Two-stage pipeline:
 
-1. **Embedder**: [Snowflake Arctic Embed M v2.0](https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0)
+1. **Embedder**: [google/embeddinggemma-300m](https://huggingface.co/google/embeddinggemma-300m)
    encodes each prompt to a 768-d L2-normalised vector (frozen, no gradient).
-   Embeddings are cached to `.npz` files keyed by an MD5 of the input texts.
+   Embeddings are cached to `.npz` files keyed by model name + MD5 of input texts.
 
-2. **Classifier**: Small feedforward network — `768 → 512 → BN → GELU → Dropout(0.3)
-   → 256 → BN → GELU → Dropout(0.2) → 128 → BN → GELU → Dropout(0.1) → 3`.
-   Trained with AdamW + cosine LR schedule + early stopping.
+2. **Classifier**: Feedforward network —
+   `768 → 512 → BN → GELU → Dropout(0.3) → 256 → BN → GELU → Dropout(0.2) → 128 → BN → GELU → Dropout(0.1) → 2`.
+   Trained with AdamW + cosine LR schedule + early stopping (patience 3).
 
-Training uses **5-fold stratified cross-validation**; each fold saves its
-best-validation-loss checkpoint. Inference averages logits across all five fold
-models (ensemble).
+Training runs **5-fold stratified cross-validation**; each fold saves its
+best-validation-loss checkpoint. Inference averages logits across all five folds
+(ensemble).
 
-**Saved files:** `checkpoints/fold_{1..5}_best.pt` (PyTorch state dicts)
+> **Note:** `google/embeddinggemma-300m` is a gated model. Accept the licence at
+> [hf.co/google/embeddinggemma-300m](https://huggingface.co/google/embeddinggemma-300m)
+> and run `huggingface-cli login` before training.
 
 **Training:**
 ```bash
-cd model_4_ffnn_arctic
-python train.py              # full pipeline: embed → 5-fold CV → ensemble eval
-python train.py --skip-cv    # skip CV, just evaluate existing checkpoints
-python train.py --limit 200  # quick smoke test
+python model_4_ffnn_gemma/train.py              # embed → 5-fold CV → ensemble eval
+python model_4_ffnn_gemma/train.py --skip-cv    # skip CV, evaluate existing checkpoints
+python model_4_ffnn_gemma/train.py --limit 200  # quick smoke test
+python model_4_ffnn_gemma/train.py --no-cache   # force re-embedding
 ```
+
+Key flags: `--limit`, `--safe-cap`, `--no-cache`, `--skip-cv`
+
+---
+
+## Metrics reported
+
+All models report the following on the held-out test set:
+
+| Metric | Description |
+|--------|-------------|
+| **F1 (macro)** | Unweighted mean F1 across both classes |
+| **F1 (safe)** | F1 for the safe class |
+| **F1 (block)** | F1 for the block class |
+| **FPR (safe)** | Fraction of safe prompts wrongly flagged as block |
+| **FNR (block)** | Fraction of block prompts missed (passed through) |
+
+Models 2 and 3 also report per-fold CV summaries (mean ± std). Model 4 additionally reports macro-AUC.
 
 ---
 
 ## Datasets
 
-All models are trained on the same pool of HuggingFace datasets, merged and
-deduplicated across sources:
+All models train on the same HuggingFace dataset pool, merged and deduplicated:
 
-| Dataset | HuggingFace ID | Label | Description |
-|---------|---------------|-------|-------------|
-| JailbreakHub | `walledai/JailbreakHub` | jailbreak | ~1.5k confirmed jailbreak system prompts |
-| Jailbreak Classification | `jackhhao/jailbreak-classification` | jailbreak / safe | Community-labelled jailbreak + benign prompts |
-| JailBreakV-28K | `JailbreakV-28K/JailBreakV-28k` | jailbreak | 28k multimodal jailbreak queries (text subset) |
-| RedTeam-2K | `JailbreakV-28K/JailBreakV-28k` (RedTeam_2K) | jailbreak | 2k red-team adversarial questions |
-| SALAD-Data | `OpenSafetyLab/Salad-Data` | harmful | 21k structured harmful questions |
-| AdvBench | `walledai/AdvBench` | harmful | Adversarial harmful behaviour prompts |
-| HarmBench (standard) | `walledai/HarmBench` | harmful | Standardised harmful behaviour benchmark |
-| HarmBench (contextual) | `walledai/HarmBench` | harmful | Context-dependent harmful prompts |
-| HarmBench (copyright) | `walledai/HarmBench` | harmful | Copyright-violating prompt benchmark |
-| LLM-LAT Benign | `LLM-LAT/benign-dataset` | safe | Long-form benign user prompts |
-| Alpaca | `tatsu-lab/alpaca` | safe | 52k short everyday instruction-following prompts |
-
-Data loading is handled by `data/loader.py`, which downloads, filters, deduplicates
-(within-source and cross-source), and optionally balances class counts before
-train/val/test splitting.
+| Dataset | HuggingFace ID | Label | Notes |
+|---------|---------------|-------|-------|
+| JailbreakHub | `walledai/JailbreakHub` | block | ~1.5k confirmed jailbreak prompts |
+| Jailbreak Classification | `jackhhao/jailbreak-classification` | block / safe | Community-labelled |
+| JailBreakV-28K | `JailbreakV-28K/JailBreakV-28k` | block | 28k jailbreak queries |
+| RedTeam-2K | `JailbreakV-28K/JailBreakV-28k` (RedTeam_2K) | block | 2k adversarial questions |
+| SALAD-Data | `OpenSafetyLab/Salad-Data` | block | 21k structured harmful questions |
+| AdvBench | `walledai/AdvBench` | block | Adversarial harmful behaviour prompts |
+| HarmBench (standard) | `walledai/HarmBench` | block | Standardised harmful benchmark |
+| HarmBench (contextual) | `walledai/HarmBench` | block | Context-dependent harmful prompts |
+| HarmBench (copyright) | `walledai/HarmBench` | block | Copyright-violating prompts |
+| LLM-LAT Benign | `LLM-LAT/benign-dataset` | safe | Long-form benign prompts |
+| Alpaca | `tatsu-lab/alpaca` | safe | 52k everyday instruction-following prompts |
 
 ---
 
-## Re-training any model
+## Re-training
 
-Each model directory contains its own `train.py`. All training scripts load data
-via `data/loader.py` and expect to be run from the repo root or their own directory
-(imports adjust via `sys.path`).
+Each model has its own `train.py`. All scripts resolve imports via `sys.path` and can be run from either the repo root or their own directory.
 
 ```bash
-# From repo root — example for model 1
-python model_1_tfidf_lr/train.py --output model_1_tfidf_lr/tfidf_lr.joblib
+# From repo root
+python model_1_tfidf_lr/train.py
+python model_2_frozen_bert/train.py
+python model_3_roberta_finetune/train.py
+python model_4_ffnn_gemma/train.py
 ```
+
+---
+
+## Old models
+
+Pre-binary-collapse checkpoints (trained on safe / jailbreak / harmful — 3 classes,
+using Snowflake Arctic Embed for model 4) are archived in `old_models/` and are
+**not compatible** with the current codebase.

@@ -6,9 +6,14 @@ import joblib
 from sklearn.model_selection import train_test_split, StratifiedKFold, cross_validate
 from sklearn.metrics import classification_report, confusion_matrix
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from data.loader import load_all
-from models.tfidf_lr import build_pipeline
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+for _p in (_HERE, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from data.loader import load_all, SAFE, BLOCK
+from model import build_pipeline
 
 
 def run_cv(model, X, y, n_folds=5):
@@ -40,38 +45,25 @@ def print_error_rates(y_true, y_pred, classes):
 
 
 def main(args):
-    from data.loader import LOADERS, JAILBREAK, HARMFUL, SAFE
-    sources = [s for s in LOADERS if not (args.no_salad and s == "salad")]
+    if args.no_salad:
+        import logging
+        logging.warning("--no-salad is not supported by the current data loader and will be ignored.")
 
     per_class = {
-        JAILBREAK: args.max_jailbreak,
-        HARMFUL: args.max_harmful,
         SAFE: args.max_safe,
+        BLOCK: args.max_block,
     }
-    # Use per-class dict if any were set explicitly, else fall back to global flag.
     if any(v is not None for v in per_class.values()):
-        # Fill unset per-class caps from --max-per-class.
-        caps = {k: (v if v is not None else args.max_per_class) for k, v in per_class.items()}
-        max_per_class = caps
+        max_samples_by_label = {k: (v if v is not None else args.max_per_class) for k, v in per_class.items()}
     else:
-        max_per_class = args.max_per_class
+        max_samples_by_label = {SAFE: args.max_per_class, BLOCK: args.max_per_class}
 
-    df, unused = load_all(sources=sources, max_per_class=max_per_class, return_unused=True)
+    df = load_all(balance=False, max_samples_by_label=max_samples_by_label)
 
     print(f"\nDataset summary ({len(df):,} total):")
     print(df["label"].value_counts().to_string())
 
-    if not unused.empty:
-        print(f"\nExcluded by cap ({len(unused):,} total) — sample prompts not used in training:")
-        for label in sorted(unused["label"].unique()):
-            subset = unused[unused["label"] == label]
-            samples = subset["text"].sample(min(5, len(subset)), random_state=42)
-            print(f"\n  [{label.upper()}]  ({len(subset):,} excluded)")
-            for text in samples:
-                snippet = text.replace("\n", " ")
-                print(f"    - {snippet}")
-
-    # Hold out test set 
+    # Hold out test set
     X_dev, X_test, y_dev, y_test = train_test_split(
         df["text"],
         df["label"],
@@ -108,16 +100,10 @@ if __name__ == "__main__":
         help="Cap all classes at this many examples (default: 10000); overridden per-class by --max-jailbreak/harmful/safe",
     )
     parser.add_argument(
-        "--max-jailbreak",
+        "--max-block",
         type=int,
         default=None,
-        help="Cap jailbreak class (overrides --max-per-class for this class)",
-    )
-    parser.add_argument(
-        "--max-harmful",
-        type=int,
-        default=None,
-        help="Cap harmful class (overrides --max-per-class for this class)",
+        help="Cap block class (overrides --max-per-class for this class)",
     )
     parser.add_argument(
         "--max-safe",

@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from config import cfg
 
-NUM_CLASSES = 3  # safe / jailbreak / harmful
+NUM_CLASSES = 2  # safe / block
 
 
 class FFNNClassifier(nn.Module):
@@ -45,4 +45,4 @@ class FFNNClassifier(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)  # (B, NUM_CLASSES) — raw logits
+        return self.net(x)  # (B, 2) — raw logits
