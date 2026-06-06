@@ -55,21 +55,21 @@ MODEL_DISPLAY = {
 
 def _load_tfidf_lr():
     import joblib
-    path = REPO_ROOT / "model_1_tfidf_lr" / "tfidf_lr.joblib"
+    path = REPO_ROOT / "outputs" / "tfidf_lr" / "tfidf_lr.joblib"
     return joblib.load(path)
 
 
 def _load_frozen_bert():
     sys.path.insert(0, str(REPO_ROOT / "model_2_frozen_bert"))
     from model import load_bert
-    path = REPO_ROOT / "model_2_frozen_bert" / "frozen_bert.pt"
+    path = REPO_ROOT / "outputs" / "frozen_bert" / "frozen_bert.pt"
     return load_bert(str(path))
 
 
 def _load_roberta():
     sys.path.insert(0, str(REPO_ROOT / "model_3_roberta_finetune"))
     from model import load_roberta
-    path = REPO_ROOT / "model_3_roberta_finetune" / "roberta_finetuned"
+    path = REPO_ROOT / "outputs" / "roberta_finetuned"
     return load_roberta(str(path))  # returns (model, tokenizer)
 
 
@@ -80,7 +80,7 @@ def _load_ffnn_gemma():
     from config import cfg
     from embeddings.embed import get_embedder
 
-    cfg.checkpoints_dir = REPO_ROOT / "model_4_ffnn_gemma" / "checkpoints"
+    cfg.checkpoints_dir = REPO_ROOT / "outputs" / "ffnn_gemma"
     cfg.embeddings_dir = REPO_ROOT / "model_4_ffnn_gemma" / "cache" / "embeddings"
     cfg.cache_dir = REPO_ROOT / "model_4_ffnn_gemma" / "cache"
     cfg.checkpoints_dir.mkdir(parents=True, exist_ok=True)

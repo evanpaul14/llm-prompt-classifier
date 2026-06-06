@@ -8,7 +8,7 @@ class Config:
     # Paths
     cache_dir: Path = Path("cache")
     embeddings_dir: Path = Path("cache/embeddings")
-    checkpoints_dir: Path = Path("checkpoints")
+    checkpoints_dir: Path = Path("outputs/ffnn_gemma")
 
     # Embedding model
     embed_model: str = "google/embeddinggemma-300m"
