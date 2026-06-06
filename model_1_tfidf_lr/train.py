@@ -130,7 +130,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="tfidf_lr.joblib",
-        help="Path to save the trained model (default: tfidf_lr.joblib)",
+        default="outputs/tfidf_lr/tfidf_lr.joblib",
+        help="Path to save the trained model",
     )
     main(parser.parse_args())

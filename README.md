@@ -66,6 +66,18 @@ llm-prompt-classifier/
 │   └── training/
 │       └── cross_val.py              # stratified 5-fold CV trainer
 │
+├── outputs/                          # trained model artifacts (all models)
+│   ├── tfidf_lr/
+│   │   └── tfidf_lr.joblib           # Model 1 sklearn pipeline
+│   ├── frozen_bert/
+│   │   └── frozen_bert.pt            # Model 2 checkpoint (torch.save)
+│   ├── roberta_finetuned/            # Model 3 HuggingFace saved model
+│   │   ├── model.safetensors
+│   │   ├── config.json
+│   │   └── tokenizer*
+│   └── ffnn_gemma/
+│       └── fold_{1-5}_best.pt        # Model 4 per-fold checkpoints (5-fold ensemble)
+│
 └── old_models/                       # archived checkpoints (3-class, now superseded)
     ├── tfidf_lr.joblib
     ├── frozen_bert.pt
@@ -85,7 +97,7 @@ weights. No GPU required; loads and predicts in milliseconds.
 
 **Training:**
 ```bash
-python model_1_tfidf_lr/train.py --max-per-class 10000 --output model_1_tfidf_lr/tfidf_lr.joblib
+python model_1_tfidf_lr/train.py --max-per-class 10000
 ```
 
 Key flags: `--max-per-class`, `--max-safe`, `--max-block`, `--C`, `--skip-cv`

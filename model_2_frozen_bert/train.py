@@ -48,7 +48,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--max-samples", type=int, default=None, help="Max samples per dataset source.")
     p.add_argument("--max-safe", type=int, default=None, help="Cap total safe (label=0) samples after loading.")
     p.add_argument("--cache-dir", default="./cache")
-    p.add_argument("--output-dir", default="./outputs")
+    p.add_argument("--output-dir", default="./outputs/frozen_bert")
     p.add_argument("--cv-folds", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--bert-model", default="roberta-base")
