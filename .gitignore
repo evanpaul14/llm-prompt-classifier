@@ -11,3 +11,5 @@ results.md
 eval_102.py
 evaluate.py
 model_decisions.md
+run_bert_training.sh
+run_model3_finetune.sh
