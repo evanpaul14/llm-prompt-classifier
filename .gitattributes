@@ -1,2 +1,5 @@
 *.pt filter=lfs diff=lfs merge=lfs -text
 *.safetensors filter=lfs diff=lfs merge=lfs -text
+checkpoints/*.pt filter= diff= merge= -text
+outputs/ffnn_gemma/*.pt filter= diff= merge= -text
+old_models/ffnn_arctic_checkpoints/*.pt filter= diff= merge= -text
