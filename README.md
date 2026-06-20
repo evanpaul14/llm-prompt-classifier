@@ -212,6 +212,17 @@ All models train on the same HuggingFace dataset pool, merged and deduplicated:
 
 ---
 
+## Curated evaluation sets
+
+`datasets/` holds hand-curated, manually-labelled prompt sets used to stress-test the four models beyond the training distribution (see `eval_102.py` and `test_ffnn_gemma.py`):
+
+| File | Prompts | Labels | Notes |
+|------|---------|--------|-------|
+| `vocab_shortcuts_eval102.csv` | 102 | `safe` / `jailbreak` / `harmful` (3-way) + `label_binary` (safe/block) | 34 prompts per class, varied lengths and jailbreak techniques |
+| `vocab_shortcuts_eval347.csv` | 347 | `safe` / `block` | Categorized (`category`) and length-bucketed (`length_bucket`); includes benign prompts containing dangerous-sounding vocabulary |
+
+---
+
 ## Re-training
 
 Each model has its own `train.py`. All scripts resolve imports via `sys.path` and can be run from either the repo root or their own directory.
