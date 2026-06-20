@@ -25,12 +25,20 @@ Models:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
 
 LABELS = ["safe", "block"]
+
+
+def _load_temperature(model_dir: Path) -> float:
+    path = model_dir / "temperature.json"
+    if path.exists():
+        return json.loads(path.read_text())["temperature"]
+    return 1.0
 
 MODEL_ALIASES = {
     "1": "tfidf_lr",
@@ -105,38 +113,52 @@ def _load_ffnn_gemma():
 
 def predict_tfidf_lr(model, texts: list[str]) -> list[dict]:
     probs_all = model.predict_proba(texts)
-    classes = model.classes_
+    raw_classes = model.classes_
+    # sklearn may store integer class labels; map to string names
+    str_classes = [LABELS[int(c)] if isinstance(c, (int, __import__("numpy").integer)) else str(c)
+                   for c in raw_classes]
     results = []
     for text, probs in zip(texts, probs_all):
-        label = classes[probs.argmax()]
+        label = str_classes[probs.argmax()]
         results.append({
             "text": text,
             "label": label,
-            "probs": {c: round(float(p), 4) for c, p in zip(classes, probs)},
+            "probs": {c: round(float(p), 4) for c, p in zip(str_classes, probs)},
         })
     return results
 
 
 def predict_frozen_bert(model, texts: list[str]) -> list[dict]:
     import torch
+    import torch.nn.functional as F
     from transformers import AutoTokenizer
+    T = _load_temperature(REPO_ROOT / "outputs" / "frozen_bert")
     tokenizer = AutoTokenizer.from_pretrained(model.cfg.model_name)
-    sys.path.insert(0, str(REPO_ROOT / "model_2_frozen_bert"))
-    from model import predict_bert
-    preds = predict_bert(model, texts, tokenizer=tokenizer)
+    device = next(model.parameters()).device
+    model.eval()
     results = []
-    for text, pred in zip(texts, preds):
-        results.append({
-            "text": text,
-            "label": LABELS[pred],
-            "probs": {LABELS[pred]: 1.0},
-        })
+    batch_size = 32
+    for i in range(0, len(texts), batch_size):
+        chunk = texts[i:i + batch_size]
+        enc = tokenizer(chunk, truncation=True, padding="max_length",
+                        max_length=model.cfg.max_seq_len, return_tensors="pt")
+        with torch.no_grad():
+            logits = model(enc["input_ids"].to(device), enc["attention_mask"].to(device))
+        probs = F.softmax(logits / T, dim=-1).cpu()
+        for text, prob in zip(chunk, probs):
+            pred = int(prob.argmax())
+            results.append({
+                "text": text,
+                "label": LABELS[pred],
+                "probs": {LABELS[j]: round(float(prob[j]), 4) for j in range(len(LABELS))},
+            })
     return results
 
 
 def predict_roberta(model_and_tok, texts: list[str]) -> list[dict]:
     import torch
     import torch.nn.functional as F
+    T = _load_temperature(REPO_ROOT / "outputs" / "roberta_finetuned")
     model, tokenizer = model_and_tok
     sys.path.insert(0, str(REPO_ROOT / "model_3_roberta_finetune"))
     device = next(model.parameters()).device
@@ -152,7 +174,7 @@ def predict_roberta(model_and_tok, texts: list[str]) -> list[dict]:
         with torch.no_grad():
             logits = model(enc["input_ids"].to(device),
                            enc["attention_mask"].to(device)).logits
-        probs = F.softmax(logits, dim=-1).cpu()
+        probs = F.softmax(logits / T, dim=-1).cpu()
         preds_all.extend(logits.argmax(dim=-1).cpu().tolist())
         probs_all.extend(probs.tolist())
 
@@ -167,12 +189,13 @@ def predict_roberta(model_and_tok, texts: list[str]) -> list[dict]:
 
 def predict_ffnn_gemma(model_data, texts: list[str]) -> list[dict]:
     import torch
+    T = _load_temperature(REPO_ROOT / "outputs" / "ffnn_gemma")
     models, embedder, cfg = model_data
     emb = embedder.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
     x = torch.tensor(emb, dtype=torch.float32).to(cfg.device)
     with torch.no_grad():
         logits = torch.stack([m(x) for m in models]).mean(0)
-    probs = torch.softmax(logits, dim=1).cpu().numpy()
+    probs = torch.softmax(logits / T, dim=1).cpu().numpy()
     results = []
     for text, prob in zip(texts, probs):
         label = LABELS[prob.argmax()]
