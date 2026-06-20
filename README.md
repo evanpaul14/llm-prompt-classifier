@@ -28,6 +28,12 @@ python predict.py --model 3 --input-file prompts.txt
 
 Model options for `--model`: `1` / `tfidf_lr`, `2` / `frozen_bert`, `3` / `roberta`, `4` / `ffnn_gemma`
 
+Models 2–4 are temperature-scaled at inference time: `predict.py` automatically loads
+`outputs/<model>/temperature.json` (if present) and divides logits by that temperature
+before softmax, so the reported probabilities are calibrated rather than raw logit
+confidences. If no `temperature.json` exists for a model, it falls back to `T=1.0`
+(uncalibrated).
+
 ---
 
 ## Project structure
@@ -70,13 +76,16 @@ llm-prompt-classifier/
 │   ├── tfidf_lr/
 │   │   └── tfidf_lr.joblib           # Model 1 sklearn pipeline
 │   ├── frozen_bert/
-│   │   └── frozen_bert.pt            # Model 2 checkpoint (torch.save)
+│   │   ├── frozen_bert.pt            # Model 2 checkpoint (torch.save)
+│   │   └── temperature.json          # Model 2 temperature-scaling calibration
 │   ├── roberta_finetuned/            # Model 3 HuggingFace saved model
 │   │   ├── model.safetensors
 │   │   ├── config.json
-│   │   └── tokenizer*
+│   │   ├── tokenizer*
+│   │   └── temperature.json          # Model 3 temperature-scaling calibration
 │   └── ffnn_gemma/
-│       └── fold_{1-5}_best.pt        # Model 4 per-fold checkpoints (5-fold ensemble)
+│       ├── fold_{1-5}_best.pt        # Model 4 per-fold checkpoints (5-fold ensemble)
+│       └── temperature.json          # Model 4 temperature-scaling calibration
 │
 └── old_models/                       # archived checkpoints (3-class, now superseded)
     ├── tfidf_lr.joblib
